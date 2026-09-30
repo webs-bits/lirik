@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LRC Maker</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:#F4EEDF;color:#2B2118;font-family:system-ui,sans-serif;padding:24px;max-width:760px;margin:0 auto;line-height:1.5}
+  h1{font-size:1.3rem;color:#B85A16;margin-bottom:4px}
+  p.sub{color:#7A6A57;font-size:.85rem;margin-bottom:18px}
+  label{display:block;font-size:.75rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#7A6A57;margin:16px 0 6px}
+  input[type=file],textarea{width:100%;background:#FBF8F0;border:1px solid rgba(43,33,24,.2);border-radius:10px;padding:10px;font:inherit;font-size:.9rem}
+  textarea{min-height:130px;resize:vertical}
+  audio{width:100%;margin-top:12px}
+  button{background:#D9731F;color:#fff;border:0;border-radius:999px;padding:10px 18px;font:600 .85rem system-ui;cursor:pointer}
+  button.alt{background:#EAE0C8;color:#2B2118}
+  button:disabled{opacity:.5;cursor:not-allowed}
+  .row{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}
+  .stage{margin-top:16px;background:#F3D9BC;border-radius:14px;padding:18px;text-align:center;min-height:96px}
+  .stage small{display:block;font-size:.72rem;color:#7A6A57;letter-spacing:.08em;text-transform:uppercase}
+  .stage .next{font-size:1.15rem;font-weight:800;color:#B85A16;margin:6px 0}
+  .stage .prev{font-size:.85rem;color:#7A6A57}
+  #hint{font-size:.8rem;color:#7A6A57;margin-top:8px}
+  #out{min-height:180px;font-family:ui-monospace,monospace;font-size:.82rem}
+</style>
+</head>
+<body>
+<h1>LRC Maker</h1>
+<p class="sub">Putar lagu, tekan <b>Spasi</b> tepat saat tiap baris mulai dinyanyiin.</p>
+
+<label>1. Pilih file lagu</label>
+<input type="file" id="audioFile">
+<p id="audioStatus" style="font-size:.8rem;color:#7A6A57;margin-top:8px">Belum ada file dipilih.</p>
+<audio id="audio" controls></audio>
+
+<label>2. Tempel lirik (satu baris per baris lirik)</label>
+<textarea id="lyrics" placeholder="Tempel lirik di sini…"></textarea>
+
+<label>Kompensasi delay tekan (detik)</label>
+<input type="number" id="comp" value="0.3" step="0.05" min="0" max="2" style="width:120px;background:#FBF8F0;border:1px solid rgba(43,33,24,.2);border-radius:10px;padding:8px;font:inherit">
+<span style="font-size:.8rem;color:#7A6A57"> Waktu tiap baris dimundurkan sekian detik, karena tangan biasanya telat menekan.</span>
+
+<div class="row">
+  <button id="start">Mulai sinkron</button>
+  <button class="alt" id="undo" disabled>Undo (Backspace)</button>
+  <button class="alt" id="reset" disabled>Ulang dari awal</button>
+</div>
+
+<div class="stage" id="stage" hidden>
+  <small>Baris berikutnya</small>
+  <div class="next" id="next"></div>
+  <div class="prev" id="prev"></div>
+</div>
+<p id="hint" hidden>Spasi = tandai baris • Backspace = batalkan baris terakhir • Baris kosong di lirik dilewati</p>
+
+<label>3. Hasil .lrc</label>
+<textarea id="out" readonly placeholder="Hasil muncul di sini…"></textarea>
+<div class="row">
+  <button id="copy">Salin</button>
+  <button class="alt" id="download">Download .lrc</button>
+</div>
+<p id="hint2" style="font-size:.8rem;color:#7A6A57;margin-top:10px">Nama file otomatis mengikuti nama lagu. Taruh di folder <b>lirik/</b> dengan nama sama seperti mp3-nya.</p>
+
+<script>
+const $ = id => document.getElementById(id);
+const audio = $('audio');
+let lines = [], stamps = [], idx = 0, running = false, baseName = 'lagu';
+
+function fmt(t){
+  const m = Math.floor(t/60), s = t - m*60;
+  return `[${String(m).padStart(2,'0')}:${s.toFixed(2).padStart(5,'0')}]`;
+}
+function render(){
+  $('out').value = stamps.map((t,i)=>fmt(t)+lines[i]).join('\n');
+  $('next').textContent = idx < lines.length ? lines[idx] : '✔ Selesai';
+  $('prev').textContent = idx > 0 ? 'Sebelumnya: ' + lines[idx-1] : '';
+  $('undo').disabled = idx === 0;
+}
+$('audioFile').addEventListener('change', e=>{
+  const f = e.target.files[0]; if(!f) return;
+  audio.src = URL.createObjectURL(f);
+  audio.load();
+  baseName = f.name.replace(/\.[^.]+$/, '');
+  $('audioStatus').textContent = 'Memuat: ' + f.name + '…';
+});
+audio.addEventListener('loadedmetadata', ()=>{
+  const d = audio.duration;
+  $('audioStatus').textContent = '✔ Siap: ' + baseName + ' (' + Math.floor(d/60) + ':' + String(Math.floor(d%60)).padStart(2,'0') + ')';
+});
+audio.addEventListener('error', ()=>{
+  $('audioStatus').textContent = '✖ Browser nggak bisa memutar file ini. Coba ubah ke .mp3 atau .m4a, atau buka pakai Chrome.';
+});
+$('start').addEventListener('click', ()=>{
+  lines = $('lyrics').value.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
+  if(!lines.length || !audio.src){ alert('Pilih lagu dan tempel lirik dulu.'); return; }
+  stamps = []; idx = 0; running = true;
+  $('stage').hidden = false; $('hint').hidden = false; $('reset').disabled = false;
+  audio.currentTime = 0; audio.play(); document.activeElement.blur();
+  render();
+});
+$('reset').addEventListener('click', ()=>{ stamps=[]; idx=0; audio.currentTime=0; render(); });
+$('undo').addEventListener('click', undo);
+function undo(){
+  if(idx===0) return;
+  idx--; stamps.pop();
+  audio.currentTime = Math.max(0, (stamps[idx-1] ?? 0) - 1);
+  render();
+}
+document.addEventListener('keydown', e=>{
+  if(!running || e.target.tagName==='TEXTAREA' || e.target.tagName==='INPUT') return;
+  if(e.code==='Space'){
+    e.preventDefault();
+    if(idx < lines.length){ stamps.push(Math.max(0, audio.currentTime - (parseFloat($('comp').value)||0))); idx++; render(); }
+  } else if(e.code==='Backspace'){ e.preventDefault(); undo(); }
+});
+$('copy').addEventListener('click', async ()=>{
+  await navigator.clipboard.writeText($('out').value);
+  $('copy').textContent = 'Tersalin ✔'; setTimeout(()=>$('copy').textContent='Salin',1200);
+});
+$('download').addEventListener('click', ()=>{
+  const blob = new Blob([$('out').value], {type:'text/plain;charset=utf-8'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = baseName + '.lrc'; a.click();
+});
+</script>
+</body>
+</html>
